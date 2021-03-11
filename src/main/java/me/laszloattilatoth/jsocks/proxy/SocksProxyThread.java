@@ -3,25 +3,19 @@ package me.laszloattilatoth.jsocks.proxy;
 import me.laszloattilatoth.jsocks.util.Logging;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.Socket;
+import java.nio.channels.SocketChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class SocksProxyThread extends Thread {
     private static final AtomicInteger previousThreadId = new AtomicInteger();
-    protected final InputStream inputStream;
-    protected final OutputStream outputStream;
-    protected final Socket socket;
     protected final int socksThreadId;
+    protected SocketChannel socketChannel;
     protected Logger logger;
 
-    public SocksProxyThread(Socket s, InputStream is, OutputStream os) {
-        this.socket = s;
-        this.inputStream = is;
-        this.outputStream = os;
+    public SocksProxyThread(SocketChannel socketChannel) {
+        this.socketChannel = socketChannel;
         this.socksThreadId = previousThreadId.incrementAndGet();
 
         this.setName("SocksProxy:" + this.socksThreadId);
@@ -34,12 +28,11 @@ public class SocksProxyThread extends Thread {
 
     @Override
     public void run() {
-        logger.info(String.format("Starting proxy instance; client_address='%s:%d', client_local='%s:%d'",
-                socket.getInetAddress().getHostAddress(), socket.getPort(),
-                socket.getLocalAddress().getHostAddress(), socket.getLocalPort()));
         try {
+            logger.info(String.format("Starting proxy instance; client_address='%s', client_local='%s'",
+                    socketChannel.getRemoteAddress(), socketChannel.getLocalAddress()));
             this.main();
-            this.socket.close();
+            this.socketChannel.close();
         } catch (IOException e) {
             logger.severe(String.format("IOException occurred; message='%s'", e.getMessage()));
             Logging.logExceptionWithBacktrace(logger, e, Level.INFO);
@@ -49,14 +42,15 @@ public class SocksProxyThread extends Thread {
     }
 
     private void main() throws IOException {
-        int version = this.inputStream.read();
+        socketChannel.configureBlocking(true);
+        int version = socketChannel.socket().getInputStream().read();
         System.out.println(version);
 
         SocksProxy p = null;
         if (version == -1) {
             return;
         } else if (version == 4 || version == 5) {
-            p = SocksProxy.create(version, socket, inputStream, outputStream, logger, getName(), socksThreadId);
+            p = SocksProxy.create(version, socketChannel, logger, getName(), socksThreadId);
         } else {
         }
 
